@@ -1,0 +1,463 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEON RUNNER X — 4D</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;background:#030611;color:white;font-family:Arial,sans-serif}
+canvas{display:block}
+#ui{position:fixed;inset:0;pointer-events:none}
+.panel{pointer-events:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(500px,92vw);padding:30px;background:linear-gradient(145deg,#101b32ee,#080d20ee);border:1px solid #36dfff77;border-radius:20px;box-shadow:0 0 45px #00cfff33;text-align:center;backdrop-filter:blur(15px)}
+h1{font-size:clamp(32px,7vw,58px);margin:0;color:#7af5ff;text-shadow:0 0 22px #00cfff}
+h2{color:#9af8ff}
+.sub{color:#9bb4d5;letter-spacing:4px;font-size:11px;margin:10px 0 28px}
+button{pointer-events:auto;border:1px solid #43eaff88;background:linear-gradient(100deg,#087da7,#5134a4);color:white;padding:13px 22px;border-radius:9px;font-weight:bold;cursor:pointer;margin:6px;transition:.2s}
+button:hover{transform:translateY(-3px);box-shadow:0 0 22px #12cfff88}
+button.secondary{background:#14233c}
+.hidden{display:none!important}
+#hud{position:absolute;inset:0;padding:20px;display:none}
+.hudrow{display:flex;justify-content:space-between;gap:12px}
+.stat{background:#071326bb;border:1px solid #4deaff55;padding:10px 16px;border-radius:10px;min-width:90px}
+.stat small{display:block;color:#8bbbd2;font-size:10px;letter-spacing:2px}
+.stat strong{font-size:21px;color:#80f8ff}
+#phase{color:#d69aff}
+#hint{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);text-align:center;color:#b4d6ec;font-size:12px;white-space:nowrap}
+#pauseBtn{position:absolute;right:20px;top:100px}
+#mobile{position:absolute;bottom:55px;width:100%;display:none;justify-content:space-between;padding:0 20px}
+#mobile button{background:#0b254acc;font-size:20px;padding:15px}
+#toast{position:absolute;top:22%;left:50%;transform:translateX(-50%);color:#9afaff;font-weight:bold;text-shadow:0 0 15px cyan}
+#settings label{display:block;color:#b9d6ef;margin:18px}
+#settings input{accent-color:#00eaff}
+</style>
+</head>
+<body>
+<div id="ui">
+ <div id="menu" class="panel">
+  <div class="sub">NEXT GENERATION SPATIAL EXPERIENCE</div>
+  <h1>NEON RUNNER X</h1>
+  <h2>4D DIMENSION</h2>
+  <p style="color:#9bb4d5">Run beyond the limits of ordinary space.</p>
+  <button id="start">START GAME</button>
+  <button class="secondary" id="openSettings">SETTINGS</button>
+  <p style="font-size:11px;color:#718ca9">W-DIMENSION • NEON CITY • INFINITE RUN</p>
+ </div>
+
+ <div id="settings" class="panel hidden">
+  <h2>GAME SETTINGS</h2>
+  <label>Graphics quality
+   <select id="quality">
+    <option value="high">High</option>
+    <option value="medium">Medium</option>
+    <option value="low">Low</option>
+   </select>
+  </label>
+  <label>Sound volume <input id="volume" type="range" min="0" max="1" step=".05" value=".35"></label>
+  <button id="backSettings">BACK</button>
+ </div>
+
+ <div id="pause" class="panel hidden">
+  <h1>PAUSED</h1>
+  <p>Take a break from the dimension.</p>
+  <button id="resume">RESUME</button>
+  <button class="secondary" id="restartPause">RESTART</button>
+  <button class="secondary" id="homePause">MAIN MENU</button>
+ </div>
+
+ <div id="over" class="panel hidden">
+  <h1>GAME OVER</h1>
+  <h2 id="finalScore">SCORE: 0</h2>
+  <p id="bestScore">BEST: 0</p>
+  <button id="again">PLAY AGAIN</button>
+  <button class="secondary" id="homeOver">MAIN MENU</button>
+ </div>
+
+ <div id="hud">
+  <div class="hudrow">
+   <div class="stat"><small>SCORE</small><strong id="score">0</strong></div>
+   <div class="stat"><small>ENERGY</small><strong id="energy">0</strong></div>
+   <div class="stat"><small>SPEED</small><strong id="speed">1.0x</strong></div>
+   <div class="stat"><small>DIMENSION</small><strong id="phase">W-0</strong></div>
+  </div>
+  <button id="pauseBtn">Ⅱ PAUSE</button>
+  <div id="toast"></div>
+  <div id="hint">A / D: MOVE · SPACE: JUMP · S: SLIDE · Q: SHIFT DIMENSION</div>
+  <div id="mobile">
+   <button id="left">◀</button>
+   <button id="jump">▲</button>
+   <button id="shift">W↔</button>
+   <button id="right">▶</button>
+  </div>
+ </div>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
+
+const $=id=>document.getElementById(id);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x030611);
+scene.fog=new THREE.FogExp2(0x071226,.012);
+
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,600);
+camera.position.set(0,5.2,10);
+camera.lookAt(0,1,0);
+
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.8));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.2;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0x8bbcff,0x101020,2));
+const sun=new THREE.DirectionalLight(0x9edfff,3);
+sun.position.set(-8,15,8);sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);
+scene.add(sun);
+const blueLight=new THREE.PointLight(0x00aaff,30,45);
+blueLight.position.set(-5,5,-10);scene.add(blueLight);
+const purpleLight=new THREE.PointLight(0x9b36ff,25,45);
+purpleLight.position.set(6,4,-20);scene.add(purpleLight);
+
+const mat=(color,emissive=0x000000,roughness=.55,metalness=.1)=>
+ new THREE.MeshStandardMaterial({color,emissive,roughness,metalness});
+
+const roadMat=mat(0x101a2b,0x020611,.4,.6);
+const neonBlue=mat(0x00cfff,0x00bfff, .3,.3);
+const neonPink=mat(0xff28c8,0xff0088,.3,.2);
+const white=mat(0xd9f6ff,0x244c66);
+const dark=mat(0x101827,0x03060a,.7,.4);
+
+function cube(parent,x,y,z,sx,sy,sz,material){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),material);
+ m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;
+ parent.add(m);return m;
+}
+
+const floor=cube(scene,0,-.25,-100,15,.5,250,roadMat);
+for(let lane=-1;lane<=1;lane++){
+ const line=cube(scene,lane*3.1,.015,-100,.035,.025,250,neonBlue);
+}
+for(let side of [-1,1]){
+ cube(scene,side*5,.1,-100,.12,.2,250,neonPink);
+}
+
+// City buildings
+const buildings=[];
+function makeBuilding(side,z){
+ const g=new THREE.Group();
+ const height=8+Math.random()*22;
+ const width=3+Math.random()*4;
+ const depth=5+Math.random()*5;
+ const x=side*(8+Math.random()*9);
+ const building=cube(g,0,height/2,0,width,height,depth,
+  mat(new THREE.Color().setHSL(.59+Math.random()*.12,.35,.12),0x050b19,.5,.5));
+ building.castShadow=true;
+ for(let y=1.3;y<height-1;y+=1.5){
+  for(let xx=-width/2+.4;xx<width/2;xx+=.85){
+   const window=cube(g,xx,y,depth/2+.025,.35,.55,.04,
+    Math.random()>.55?neonBlue:mat(0x253d65,0x102e55));
+  }
+ }
+ cube(g,0,height+.3,0,.2,.6,.2,neonPink);
+ g.position.set(x,0,z);
+ scene.add(g);buildings.push(g);
+}
+for(let side of [-1,1])for(let i=0;i<20;i++)makeBuilding(side,-i*14-12);
+
+// Street lamps
+const lamps=[];
+for(let i=0;i<14;i++){
+ const g=new THREE.Group();
+ for(let s of [-1,1]){
+  cube(g,s*5,2,0,.12,4,.12,dark);
+  cube(g,s*5,4,0,.9,.1,.25,neonBlue);
+ }
+ g.position.z=-i*20;
+ scene.add(g);lamps.push(g);
+}
+
+// Road particles
+const stars=[];
+for(let i=0;i<180;i++){
+ const m=new THREE.Mesh(new THREE.SphereGeometry(.025,5,5),Math.random()>.5?neonBlue:neonPink);
+ m.position.set((Math.random()-.5)*35,Math.random()*18,-Math.random()*220);
+ scene.add(m);stars.push(m);
+}
+
+// Player
+const player=new THREE.Group();
+scene.add(player);
+const body=new THREE.Group();player.add(body);
+const suit=mat(0x182d4a,0x075a91,.32,.65);
+const skin=mat(0xc99c7d);
+const visor=mat(0x07101d,0x00cfff,.15,.7);
+
+const torso=cube(body,0,1.3,0,.72,.95,.38,suit);
+const chest=cube(body,0,1.48,-.22,.48,.35,.06,neonBlue);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.28,18,16),skin);
+head.position.y=2.05;body.add(head);
+const face=cube(body,0,2.06,-.245,.39,.16,.07,visor);
+const backpack=cube(body,0,1.32,.29,.5,.7,.25,dark);
+const armParts=[],legParts=[];
+function limb(parent,x,y,z,length,material,collection){
+ const pivot=new THREE.Group();pivot.position.set(x,y,z);parent.add(pivot);
+ const mesh=new THREE.Mesh(new THREE.CapsuleGeometry(.105,length-.2,5,9),material);
+ mesh.position.y=-length/2;pivot.add(mesh);collection.push(pivot);return pivot;
+}
+const arms=[];
+for(let s of [-1,1]){
+ const shoulder=limb(body,s*.48,1.65,0,.68,suit,arms);
+ limb(shoulder,0,-.55,0,.55,skin,[]);
+ const hip=limb(body,s*.22,.85,0,.75,suit,legs=legParts);
+}
+const aura=new THREE.Mesh(new THREE.TorusGeometry(.7,.025,8,48),neonBlue);
+aura.rotation.x=Math.PI/2;aura.position.y=.1;player.add(aura);
+player.position.set(0,0,2);
+
+// Four-dimensional tesseract: 16 vertices, 32 edges
+const hyperGroup=new THREE.Group();scene.add(hyperGroup);
+const vertices=[];
+for(let i=0;i<16;i++){
+ const x=(i&1)?1:-1,y=(i&2)?1:-1,z=(i&4)?1:-1,w=(i&8)?1:-1;
+ vertices.push([x,y,z,w]);
+}
+const edgePositions=[];
+for(let i=0;i<16;i++)for(let bit of [1,2,4,8]){
+ if(!(i&bit))edgePositions.push(i,i|bit);
+}
+const hyperGeo=new THREE.BufferGeometry();
+const hyperCoords=new Float32Array(edgePositions.length*3);
+hyperGeo.setAttribute('position',new THREE.BufferAttribute(hyperCoords,3));
+const hyperMat=new THREE.LineBasicMaterial({color:0x5ceaff,transparent:true,opacity:.9});
+const hyperLines=new THREE.LineSegments(hyperGeo,hyperMat);
+hyperGroup.add(hyperLines);
+hyperGroup.position.set(0,2,-15);
+
+function project4(v,t){
+ let [x,y,z,w]=v;
+ const a=t*.55,b=t*.32;
+ let nx=x*Math.cos(a)-w*Math.sin(a);
+ let nw=x*Math.sin(a)+w*Math.cos(a);
+ let ny=y*Math.cos(b)-nw*Math.sin(b);
+ let nw2=y*Math.sin(b)+nw*Math.cos(b);
+ const perspective=3.5/(3.5-nw2*.35);
+ return [nx*perspective,ny*perspective,z*perspective];
+}
+
+// 4D phase mechanic
+let phase=0;
+let lane=0,velocityY=0,onGround=true,sliding=false;
+let score=0,energy=0,speed=18;
+let active=false,paused=false,over=false;
+let clock=new THREE.Clock();
+let audio=null;
+let volume=.35;
+function sound(freq=440,duration=.12,type='sine'){
+ if(!audio||volume<=0)return;
+ const osc=audio.createOscillator(),gain=audio.createGain();
+ osc.type=type;osc.frequency.value=freq;
+ gain.gain.setValueAtTime(volume*.13,audio.currentTime);
+ gain.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);
+ osc.connect(gain);gain.connect(audio.destination);
+ osc.start();osc.stop(audio.currentTime+duration);
+}
+function notify(text){
+ $('toast').textContent=text;
+ setTimeout(()=>{$('toast').textContent=''},1100);
+}
+
+const obstacles=[],orbs=[];
+function makeObstacle(){
+ const laneIndex=Math.floor(Math.random()*3)-1;
+ const type=Math.random();
+ const group=new THREE.Group();
+ let kind,phaseType;
+ if(type<.4){
+  kind='barrier';phaseType=Math.random()<.5?0:1;
+  cube(group,0,.6,0,1.5,1.2,.5,neonPink);
+  cube(group,0,1.2,0,1.6,.08,.6,white);
+ }else if(type<.7){
+  kind='laser';phaseType=Math.random()<.5?0:1;
+  cube(group,0,1.4,0,2.3,.09,.12,neonBlue);
+  for(let s of [-1,1])cube(group,s*1.1,.8,0,.1,1.6,.1,neonPink);
+ }else{
+  kind='drone';phaseType=Math.random()<.5?0:1;
+  const core=new THREE.Mesh(new THREE.SphereGeometry(.42,16,12),neonPink);
+  core.position.y=1.7;group.add(core);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(.65,.045,8,24),neonBlue);
+  ring.position.y=1.7;group.add(ring);
+ }
+ group.position.set(laneIndex*3.1,0,-130);
+ scene.add(group);
+ obstacles.push({group,kind,phase:phaseType,hit:false});
+}
+function makeOrb(){
+ const g=new THREE.Group();
+ const ring=new THREE.Mesh(new THREE.TorusGeometry(.38,.1,10,24),neonBlue);
+ ring.rotation.x=Math.PI/2;g.add(ring);
+ const core=new THREE.Mesh(new THREE.SphereGeometry(.15,12,10),white);g.add(core);
+ const l=Math.floor(Math.random()*3)-1;
+ g.position.set(l*3.1,1.4,-125);
+ scene.add(g);orbs.push(g);
+}
+
+function clearObjects(){
+ for(const o of obstacles)scene.remove(o.group);
+ for(const o of orbs)scene.remove(o);
+ obstacles.length=0;orbs.length=0;
+}
+function reset(){
+ clearObjects();
+ score=0;energy=0;speed=18;lane=0;phase=0;
+ player.position.set(0,0,2);velocityY=0;sliding=false;
+ active=true;paused=false;over=false;
+ $('menu').classList.add('hidden');
+ $('settings').classList.add('hidden');
+ $('pause').classList.add('hidden');
+ $('over').classList.add('hidden');
+ $('hud').style.display='block';
+ clock.getDelta();
+}
+function finish(){
+ active=false;over=true;
+ const best=Math.max(score,Number(localStorage.getItem('neonBest')||0));
+ localStorage.setItem('neonBest',best);
+ $('finalScore').textContent='SCORE: '+Math.floor(score);
+ $('bestScore').textContent='BEST: '+Math.floor(best);
+ $('over').classList.remove('hidden');
+ sound(100,.6,'sawtooth');
+}
+function move(d){if(!active||paused)return;lane=Math.max(-1,Math.min(1,lane+d));sound(300,.07)}
+function jump(){if(active&&!paused&&onGround){velocityY=10;onGround=false;sound(520,.15)}}
+function slide(){if(active&&!paused&&onGround){sliding=true;setTimeout(()=>sliding=false,650)}}
+function shift(){
+ if(!active||paused)return;
+ phase=1-phase;
+ $('phase').textContent='W-'+phase;
+ notify('DIMENSION SHIFT: W-'+phase);
+ sound(phase?740:420,.22,'triangle');
+}
+
+function pause(){
+ if(!active)return;
+ paused=true;$('pause').classList.remove('hidden');
+}
+function resume(){paused=false;$('pause').classList.add('hidden');clock.getDelta()}
+
+$('start').onclick=()=>{if(!audio)audio=new (window.AudioContext||window.webkitAudioContext)();reset()};
+$('again').onclick=reset;
+$('restartPause').onclick=reset;
+$('resume').onclick=resume;
+$('pauseBtn').onclick=pause;
+$('openSettings').onclick=()=>{$('menu').classList.add('hidden');$('settings').classList.remove('hidden')};
+$('backSettings').onclick=()=>{$('settings').classList.add('hidden');$('menu').classList.remove('hidden')};
+$('homePause').onclick=()=>{paused=false;$('pause').classList.add('hidden');$('hud').style.display='none';$('menu').classList.remove('hidden');active=false};
+$('homeOver').onclick=()=>{$('over').classList.add('hidden');$('hud').style.display='none';$('menu').classList.remove('hidden');over=false};
+$('volume').oninput=e=>volume=Number(e.target.value);
+
+$('left').onclick=()=>move(-1);$('right').onclick=()=>move(1);
+$('jump').onclick=jump;$('shift').onclick=shift;
+
+addEventListener('keydown',e=>{
+ if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();
+ if(e.repeat)return;
+ if(e.key==='ArrowLeft'||e.key.toLowerCase()==='a')move(-1);
+ if(e.key==='ArrowRight'||e.key.toLowerCase()==='d')move(1);
+ if(e.key===' '||e.key==='ArrowUp'||e.key.toLowerCase()==='w')jump();
+ if(e.key==='ArrowDown'||e.key.toLowerCase()==='s')slide();
+ if(e.key.toLowerCase()==='q'||e.key.toLowerCase()==='e')shift();
+ if(e.key==='Escape'){if(active&&!paused)pause();else if(paused)resume()}
+});
+
+let spawn=0,orbSpawn=0,elapsed=0;
+function update(dt){
+ if(!active||paused)return;
+ elapsed+=dt;
+ speed=Math.min(38,18+elapsed*.22);
+ score+=dt*speed*.8;
+ spawn+=dt;orbSpawn+=dt;
+ if(spawn>Math.max(.65,1.35-elapsed*.003)){makeObstacle();spawn=0}
+ if(orbSpawn>1.3){makeOrb();orbSpawn=0}
+
+ player.position.x=THREE.MathUtils.damp(player.position.x,lane*3.1,12,dt);
+ if(!onGround){
+  velocityY-=24*dt;player.position.y+=velocityY*dt;
+  if(player.position.y<=0){player.position.y=0;velocityY=0;onGround=true}
+ }
+ body.position.y=sliding?-.42:0;
+ body.scale.y=sliding?.65:1;
+ body.rotation.z=THREE.MathUtils.damp(body.rotation.z,-lane*.09,5,dt);
+ aura.rotation.z+=dt*2;
+ arms.forEach((a,i)=>a.rotation.x=Math.sin(elapsed*11+i*Math.PI)*.65);
+ legParts.forEach((a,i)=>a.rotation.x=Math.sin(elapsed*11+i*Math.PI)*.75);
+
+ for(let i=obstacles.length-1;i>=0;i--){
+  const o=obstacles[i];
+  o.group.position.z+=speed*dt;
+  o.group.rotation.y+=dt*.7;
+  const dx=Math.abs(player.position.x-o.group.position.x);
+  const dz=Math.abs(player.position.z-o.group.position.z);
+  if(!o.hit&&dx<1.35&&dz<1.15&&phase===o.phase){
+   let safe=false;
+   if(o.kind==='barrier')safe=player.position.y>1.15;
+   if(o.kind==='laser')safe=sliding;
+   if(o.kind==='drone')safe=player.position.y>1.05;
+   if(!safe){o.hit=true;finish();return}
+  }
+  if(o.group.position.z>12){scene.remove(o.group);obstacles.splice(i,1)}
+ }
+ for(let i=orbs.length-1;i>=0;i--){
+  const o=orbs[i];
+  o.position.z+=speed*dt;o.rotation.y+=dt*2;
+  if(Math.abs(player.position.x-o.position.x)<1&&Math.abs(player.position.z-o.position.z)<1.1&&Math.abs(player.position.y+1.4-o.position.y)<1.4){
+   energy++;score+=100;sound(880,.15,'sine');
+   scene.remove(o);orbs.splice(i,1);continue;
+  }
+  if(o.position.z>12){scene.remove(o);orbs.splice(i,1)}
+ }
+ buildings.forEach(b=>{b.position.z+=speed*dt*.65;if(b.position.z>20)b.position.z-=280});
+ lamps.forEach(l=>{l.position.z+=speed*dt;if(l.position.z>15)l.position.z-=280});
+ stars.forEach(s=>{s.position.z+=speed*dt*1.5;if(s.position.z>8){s.position.z=-220;s.position.x=(Math.random()-.5)*35}});
+ hyperGroup.position.z=-15+Math.sin(elapsed*1.3)*2;
+ const p=vertices.map(v=>project4(v,elapsed));
+ for(let i=0;i<edgePositions.length;i++){
+  const v=p[edgePositions[i]];
+  hyperCoords[i*3]=v[0]*1.7;
+  hyperCoords[i*3+1]=v[1]*1.7;
+  hyperCoords[i*3+2]=v[2]*1.7;
+ }
+ hyperGeo.attributes.position.needsUpdate=true;
+ hyperGroup.rotation.y=elapsed*.25;
+ camera.position.x=THREE.MathUtils.damp(camera.position.x,player.position.x*.22,3,dt);
+ camera.position.y=5.2+Math.sin(elapsed*2)*.08;
+ camera.lookAt(player.position.x*.25,1.1,-5);
+ blueLight.intensity=25+Math.sin(elapsed*3)*8;
+ $('score').textContent=Math.floor(score);
+ $('energy').textContent=energy;
+ $('speed').textContent=(speed/18).toFixed(1)+'x';
+}
+
+function animate(){
+ requestAnimationFrame(animate);
+ const dt=Math.min(clock.getDelta(),.04);
+ update(dt);
+ renderer.render(scene,camera);
+}
+animate();
+
+addEventListener('resize',()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+if('ontouchstart'in window)$('mobile').style.display='flex';
+</script>
+</body>
+</html>
